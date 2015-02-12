@@ -1,0 +1,44 @@
+{
+  "name": "rally-lookback-tools",
+  "version": "0.1.0",
+  "description": "A node.js and browser-based toolkit for working with Rally's Lookback API.",
+  "keywords": [
+    "Rally",
+    "Rally Software",
+    "node.js",
+    "Lookback",
+    "API",
+    "Lookback API"
+  ],
+  "main": "./rally-lookback-tools",
+  "author": {
+    "name": "Larry Maccherone",
+    "url": "http://maccherone.com"
+  },
+  "homepage": "https://github.com/lmaccherone/rally-lookback-tools",
+  "engines": {
+    "node": ">=0.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://github.com/lmaccherone/rally-lookback-tools.git"
+  },
+  "preferGlobal": false,
+  "devDependencies": {
+    "coffee-script": "^1.9.0",
+    "runsync": "~0.1.6",
+    "nodeunit": "~0.9.0"
+  },
+  "scripts": {
+    "test": "cake test"
+  },
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "http://www.opensource.org/licenses/MIT"
+    }
+  ],
+  "dependencies": {
+    "superagent": "^0.21.0"
+  }
+}
