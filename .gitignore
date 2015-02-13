@@ -1,5 +1,5 @@
 .DS_Store
-scratch
+.scratch
 js
 node_modules
 .idea

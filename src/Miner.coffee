@@ -1,5 +1,9 @@
 superagent = require('superagent')
 
+truncate = (n, decimals) ->
+  decade = Math.pow(10, decimals)
+  n = Math.floor(n * decade) / decade
+
 class Miner
   ###
   @class Miner
@@ -10,8 +14,8 @@ class Miner
     lastValidFrom: '0001-01-01T00:00:00.000Z'
     baseUri: 'https://rally1.rallydev.com/analytics/v2.0/service/rally'
     hydrate: null
-    pagesize: 100
     unauthorizedProjects: []
+    pagesize: 100
     workspaceOID: -1
     rootProjectOID: -1
 
@@ -39,6 +43,9 @@ class Miner
 
     @startDate = new Date()
     @snapshotsSoFar = 0
+    @morePages = true
+    @results = []
+    @start = 0
 
   getUri: () ->
     find = {"_ProjectHierarchy": @rootProjectOID}
@@ -56,15 +63,52 @@ class Miner
       uri += '&hydrate=' + JSON.stringify(@hydrate)
     uri += '&sort={_ValidFrom:1}'
     uri += '&pagesize=' + @pagesize
+    uri += '&start=' + @start
     uri += '&removeUnauthorizedSnapshots=true'
 
     return uri
 
-  fetchPage: (callback) ->
+  fetchPage: (@callback) ->
+
+    responseProcessor = (response) =>
+      data = JSON.parse(response.text)
+      unless response.ok
+        throw new Error(response.text)
+      newUnauthorizedProjects = data.UnauthorizedProjects
+      if newUnauthorizedProjects?.length > 0
+        @unauthorizedProjects = @unauthorizedProjects.concat(newUnauthorizedProjects)
+        console.error('Adding to unauthorizedProjects and retrying\n', @unauthorizedProjects)
+        @fetchPage(@callback)
+      else
+        @results = @results.concat(data.Results)
+        lastTotalResultCount = data.TotalResultCount
+        @morePages = lastTotalResultCount > @pagesize
+        newLastValidFrom = @results[@results.length - 1]._ValidFrom
+        if @morePages and newLastValidFrom == @lastValidFrom
+           @start += @pagesize
+           @fetchPage(@callback)
+        else
+          @lastValidFrom = newLastValidFrom
+
+          @snapshotsSoFar += @results.length
+          snapshotsRemaining = lastTotalResultCount - @results.length
+          millisecondsElapsed = new Date() - @startDate
+          millisecondsPerSnapshot = millisecondsElapsed / @snapshotsSoFar
+          @minutesRemaining = truncate(snapshotsRemaining * millisecondsPerSnapshot / 1000 / 60, 0)
+          portionComplete = @snapshotsSoFar / (@snapshotsSoFar + snapshotsRemaining)
+          @percentComplete = truncate(100 * portionComplete, 2)
+
+          response.data = data
+          response.results = @results
+          @results = []
+          @start = 0
+          @callback(response)
+
     superagent
       .get(@getUri())
       .auth(@user, @password)
-      .end(callback);
+      .set('Accept', 'application/json')
+      .end(responseProcessor);
 
   getStateForSaving: () ->
     ###
@@ -93,47 +137,3 @@ class Miner
 
 exports.Miner = Miner
 
-
-
-processRallyConnection = (connectionConfig) ->
-
-  try
-
-    while true
-      uriOptions = {baseUri, hydrateFields, workspaceOID, rootProjectOID, start, pagesize, lastValidFrom, unauthorizedProjects}
-      uri = getUri(uriOptions)
-      response = syncRequest.get(uri, options)
-      newUnauthorizedProjects = response.data.UnauthorizedProjects
-      if newUnauthorizedProjects?.length > 0
-        unauthorizedProjects = unauthorizedProjects.concat(newUnauthorizedProjects)
-        console.error('Adding to unauthorizedProjects and retrying\n', unauthorizedProjects)
-        continue
-      results = response.data.Results
-      requestCount++
-      lastTotalResultCount = response.data.TotalResultCount
-      pagesize = response.data.PageSize
-      shouldGet = Math.min(lastTotalResultCount, pagesize)
-
-      newLastValidFrom = results[results.length - 1]._ValidFrom
-      if newLastValidFrom == lastValidFrom
-        console.error("LastValidFrom is the same as prior lastValidFrom. Incrementing lastValidFrom by 1 millisecond to prevent deadlock. There is a risk of skipping snapshots.")
-        lastValidFrom = new Date(new Date(lastValidFrom).getTime() + 1).toISOString()
-      else
-        lastValidFrom = newLastValidFrom
-
-      resultsString = JSONrows(results)
-      fs.appendFileSync('../../../../../../boa.json', resultsString)
-
-      snapshotsRemaining = lastTotalResultCount - results.length
-      snapshotsSoFar = requestCount * pagesize
-      millisecondsElapsed = new Date() - startDate
-      millisecondsPerSnapshot = millisecondsElapsed / snapshotsSoFar
-      timeRemaining = snapshotsRemaining * millisecondsPerSnapshot
-      portionComplete = snapshotsSoFar / (snapshotsSoFar + snapshotsRemaining)
-      percentComplete = truncate(100 * portionComplete, 2)
-      console.log("#{percentComplete}%  Time remaining: #{truncate(timeRemaining / 1000 / 60, 0)} minutes")
-
-      if lastTotalResultCount < pagesize
-        break
-
-    return
