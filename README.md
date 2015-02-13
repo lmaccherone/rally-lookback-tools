@@ -5,7 +5,6 @@ Copyright (c) 2015, Lawrence S. Maccherone, Jr.
 
 _A node.js and browser-based toolkit for working with Rally's Lookback API._
 
-
 ## Credits ##
 
 Author: [Larry Maccherone](http://maccherone.com)
