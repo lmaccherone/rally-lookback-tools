@@ -1,6 +1,6 @@
 superagent = require('superagent')
 
-truncate = (n, decimals) ->
+_truncate = (n, decimals) ->
   decade = Math.pow(10, decimals)
   n = Math.floor(n * decade) / decade
 
@@ -8,14 +8,16 @@ class Miner
   ###
   @class Miner
 
-  Mine everything in the LBAPI and keep updating it.
+  Mine everything in the Rally Lookback API and keep updating it.
+
+  See front page of this documentation (README.MD) for an example of using this Miner class.
   ###
   @propertyDefaults =
     lastValidFrom: '0001-01-01T00:00:00.000Z'
     baseUri: 'https://rally1.rallydev.com/analytics/v2.0/service/rally'
     hydrate: null
     unauthorizedProjects: []
-    pagesize: 100
+    pagesize: 100000  # Start out with something really large and let it get set by the first response
     workspaceOID: -1
     rootProjectOID: -1
 
@@ -47,7 +49,7 @@ class Miner
     @results = []
     @start = 0
 
-  getUri: () ->
+  _getUri: () ->
     find = {"_ProjectHierarchy": @rootProjectOID}
     find._ValidFrom = {"$gte": @lastValidFrom}
     if @unauthorizedProjects.length > 0
@@ -69,9 +71,49 @@ class Miner
     return uri
 
   fetchPage: (@callback) ->
+    ###
+    @method fetchPage
+      This is what you'll repeatedly call to fetch a "page" of data from the LBAPI.
 
+      This code was carefully designed so that it can be restarted if interrupted. It can also be rerun periodically
+      to keep up with the ever growing list of snapshots in your Lookback API. This is accomplished by triggering
+      off of the _ValidFrom field. I assume that for each snapshot made available via the Lookback API, its _ValidFrom
+      is greater than or equal to the snapshot before it. When a "page" is fetched the state of the lastValidFrom
+      property in the miner is updated to the last _ValidFrom in the sorted results. The next call to the fetchPage() will
+      look for snapshots that are greater than or equal to the prior last _ValidFrom. There are a few implications
+      of this approach to which you should be aware:
+
+      1. There will be overlaps between pages. At the very least, the last snapshot of one page will be fetched again
+         as the first snapshot of the next page. You will need to deal with this before consuming the resulting stream.
+         In my case, the place where I am storing these snapshots is idempotent such that sending in a snapshot with
+         the exact same values will not duplicate it.
+      2. One call to fetchPage() might result in more than one pagesize's worth of snapshots being returned. Why?
+         Well, it is possible to have more than 100 (the LBAPI default page size) snapshots in a row with the same
+         _ValidFrom. In fact, it's fairly common when Project hierarchies are adjusted. If we didn't take this into
+         account, the first and last _ValidFrom's in a given page would match and the page fetching would never advance.
+         So, a single one of your calls to fetchPage() might actually result in fetching of more than one actual
+         Lookback API page before returning the results back to you.
+
+      Advice
+
+      Limitations:
+
+      1. The Lookback API indicates that a work item is deleted by changing its _ValidTo to the moment that it's deleted.
+         Since this miner only senses new snapshots, you'll miss when a work item is deleted or even when it's moved
+         out of scope of the miner's rootProject or your permissions. The ideal way to deal with this would be to monitor the event stream
+         and trigger an update at that time. I know of no publicly available documentation of such functionality at
+         this time (2015-02-14), but maybe Rally will offer this some day. For now, I periodically check for snapshots
+         where my copy of the snapshot has "9999-01-01T00:00:00.000Z" as the _ValidTo to see the APIs _ValidTo has changed.
+      2. If more projects are added to your permissions, you should rerun the mining operation from the start or patch
+         up your copy of the missing permissions. Ideally, you would configure this miner to run as a user with broad
+         permissions to read every work item in the system. The miner deals gracefully with missing permissions even
+         keeping track of unauthorized projects. You can use the @unauthorizedProjects property to periodically check
+         if you've been granted permission, fetch, and patch those snapshots into your copy. However, work items that
+         are moved out of the scope of the rootProject config will be missing some history.
+    ###
     responseProcessor = (response) =>
       data = JSON.parse(response.text)
+      @pagesize = data.PageSize
       unless response.ok
         throw new Error(response.text)
       newUnauthorizedProjects = data.UnauthorizedProjects
@@ -94,9 +136,9 @@ class Miner
           snapshotsRemaining = lastTotalResultCount - @results.length
           millisecondsElapsed = new Date() - @startDate
           millisecondsPerSnapshot = millisecondsElapsed / @snapshotsSoFar
-          @minutesRemaining = truncate(snapshotsRemaining * millisecondsPerSnapshot / 1000 / 60, 0)
+          @minutesRemaining = _truncate(snapshotsRemaining * millisecondsPerSnapshot / 1000 / 60, 0)
           portionComplete = @snapshotsSoFar / (@snapshotsSoFar + snapshotsRemaining)
-          @percentComplete = truncate(100 * portionComplete, 2)
+          @percentComplete = _truncate(100 * portionComplete, 2)
 
           response.data = data
           response.results = @results
@@ -105,7 +147,7 @@ class Miner
           @callback(response)
 
     superagent
-      .get(@getUri())
+      .get(@_getUri())
       .auth(@user, @password)
       .set('Accept', 'application/json')
       .end(responseProcessor);
