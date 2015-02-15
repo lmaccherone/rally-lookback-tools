@@ -12,6 +12,21 @@ class Miner
 
   See front page of this documentation (README.MD) for an example of using this Miner class.
   ###
+  ###
+  @property morePages This will be false if the last call to fetchPage() got all of the available snapshots.
+  ###
+  ###
+  @property lastValidFrom The _ValidFrom for the last snapshot in the results
+  ###
+  ###
+  @property snapshotsSoFar How many snapshots have been retrieved since the Miner was instantiated
+  ###
+  ###
+  @property minutesRemaining Estimated minutes remaining snapshots are retrieved
+  ###
+  ###
+  @property percentComplete Percent complete as calculated from when this Miner was instantiated.
+  ###
   @propertyDefaults =
     lastValidFrom: '0001-01-01T00:00:00.000Z'
     baseUri: 'https://rally1.rallydev.com/analytics/v2.0/service/rally'
@@ -110,6 +125,14 @@ class Miner
          keeping track of unauthorized projects. You can use the @unauthorizedProjects property to periodically check
          if you've been granted permission, fetch, and patch those snapshots into your copy. However, work items that
          are moved out of the scope of the rootProject config will be missing some history.
+
+    @param {Function} callback
+    @return {Object}
+      The callback is called an object containing everything that came back from the superagent, plus a few other.
+
+      **response.results** - The parsed/Objectified contents of the Results section of the Lookback API response
+      **response.data** - The full response of the last Lookback API call. Note, response.data.Results will only
+        contain the last page. You should use response.results.
     ###
     responseProcessor = (response) =>
       data = JSON.parse(response.text)
