@@ -1,7 +1,5 @@
 superagent = require('superagent')
 
-# !TODO: Check Predecessors, Successors, Blocker (Blocked Reason?)
-
 _truncate = (n, decimals) ->
   decade = Math.pow(10, decimals)
   n = Math.floor(n * decade) / decade
