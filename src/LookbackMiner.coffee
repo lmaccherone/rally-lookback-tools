@@ -4,13 +4,13 @@ _truncate = (n, decimals) ->
   decade = Math.pow(10, decimals)
   n = Math.floor(n * decade) / decade
 
-class Miner
+class LookbackMiner  # !TODO: Create and use a LBAPIQuery class with expected headers. Add timeout.
   ###
-  @class Miner
+  @class LookbackMiner
 
   Mine everything in the Rally Lookback API and keep updating it.
 
-  See front page of this documentation (README.MD) for an example of using this Miner class.
+  See front page of this documentation (README.MD) for an example of using this LookbackMiner class.
   ###
   ###
   @property morePages This will be false if the last call to fetchPage() got all of the available snapshots.
@@ -19,13 +19,13 @@ class Miner
   @property lastValidFrom The _ValidFrom for the last snapshot in the results
   ###
   ###
-  @property snapshotsSoFar How many snapshots have been retrieved since the Miner was instantiated
+  @property snapshotsSoFar How many snapshots have been retrieved since the LookbackMiner was instantiated
   ###
   ###
   @property minutesRemaining Estimated minutes remaining snapshots are retrieved
   ###
   ###
-  @property percentComplete Percent complete as calculated from when this Miner was instantiated.
+  @property percentComplete Percent complete as calculated from when this LookbackMiner was instantiated.
   ###
   @propertyDefaults =
     lastValidFrom: '0001-01-01T00:00:00.000Z'
@@ -37,25 +37,25 @@ class Miner
     rootProjectOID: -1
 
   constructor: (@user, @password, config) ->
-    unless this instanceof Miner  # get an instance without "new"
-      return new Miner(user, password, config)
+    unless this instanceof LookbackMiner  # get an instance without "new"
+      return new LookbackMiner(user, password, config)
 
     unless @user?
-      throw new Error('user is required when instantiating a new Miner')
+      throw new Error('user is required when instantiating a new LookbackMiner')
     unless @password?
-      throw new Error('password is required when instantiating a new Miner')
+      throw new Error('password is required when instantiating a new LookbackMiner')
 
     if config.workspaceOID?
       @workspaceOID = config.workspaceOID
     else
-      throw new Error('config.workspaceOID is required when instantiating a new Miner')
+      throw new Error('config.workspaceOID is required when instantiating a new LookbackMiner')
 
     if config.rootProjectOID?
       @rootProjectOID = config.rootProjectOID
     else
-      throw new Error('config.rootProjectOID is required when instantiating a new Miner')
+      throw new Error('config.rootProjectOID is required when instantiating a new LookbackMiner')
 
-    for variable, defaultValue of Miner.propertyDefaults
+    for variable, defaultValue of LookbackMiner.propertyDefaults
       this[variable] = config[variable] ? defaultValue
 
     @startDate = new Date()
@@ -103,13 +103,11 @@ class Miner
          In my case, the place where I am storing these snapshots is idempotent such that sending in a snapshot with
          the exact same values will not duplicate it.
       2. One call to fetchPage() might result in more than one pagesize's worth of snapshots being returned. Why?
-         Well, it is possible to have more than 100 (the LBAPI default page size) snapshots in a row with the same
+         Well, it is possible to have more than 100 (the LBAPI max page size when fields=true) snapshots in a row with the same
          _ValidFrom. In fact, it's fairly common when Project hierarchies are adjusted. If we didn't take this into
          account, the first and last _ValidFrom's in a given page would match and the page fetching would never advance.
          So, a single one of your calls to fetchPage() might actually result in fetching of more than one actual
          Lookback API page before returning the results back to you.
-
-      Advice
 
       Limitations:
 
@@ -118,7 +116,7 @@ class Miner
          out of scope of the miner's rootProject or your permissions. The ideal way to deal with this would be to monitor the event stream
          and trigger an update at that time. I know of no publicly available documentation of such functionality at
          this time (2015-02-14), but maybe Rally will offer this some day. For now, I periodically check for snapshots
-         where my copy of the snapshot has "9999-01-01T00:00:00.000Z" as the _ValidTo to see the APIs _ValidTo has changed.
+         where my copy of the snapshot has "9999-01-01T00:00:00.000Z" as the _ValidTo to see if the item's _ValidTo has changed.
       2. If more projects are added to your permissions, you should rerun the mining operation from the start or patch
          up your copy of the missing permissions. Ideally, you would configure this miner to run as a user with broad
          permissions to read every work item in the system. The miner deals gracefully with missing permissions even
@@ -173,32 +171,31 @@ class Miner
       .get(@_getUri())
       .auth(@user, @password)
       .set('Accept', 'application/json')
-      .end(responseProcessor);
+      .end(responseProcessor)
 
   getStateForSaving: () ->
     ###
     @method getStateForSaving
-      Enables saving the state of this Miner. The only state it won't save is the user and password.
-    @return {Object} Returns an Object representing the state of the Miner. This Object is suitable for saving to
+      Enables saving the state of this LookbackMiner. The only state it won't save is the user and password.
+    @return {Object} Returns an Object representing the state of the LookbackMiner. This Object is suitable for saving to
       to an object store. Use the static method `newFromSavedState()` with this Object as the parameter to reconstitute
-      the Miner.
+      the LookbackMiner.
     ###
     state = {}
-    for variable, value of Miner.propertyDefaults
+    for variable, value of LookbackMiner.propertyDefaults
       state[variable] = this[variable]
     return state
 
   @newFromSavedState: (user, password, state) ->
     ###
     @method newFromSavedState
-      Deserializes a previously saved Miner and returns a new Miner.
+      Deserializes a previously saved LookbackMiner and returns a new LookbackMiner.
     @static
     @param {String/Object} state A String or Object from a previously saved state
     @return {Miner}
     ###
     if typeof state is 'string'
       state = JSON.parse(state)
-    return new Miner(user, password, state)
+    return new LookbackMiner(user, password, state)
 
-exports.Miner = Miner
-
+exports.LookbackMiner = LookbackMiner
