@@ -1,4 +1,5 @@
 superagent = require('superagent')
+{AllowedValuesMiner} = require('./AllowedValuesMiner')
 
 _truncate = (n, decimals) ->
   decade = Math.pow(10, decimals)
@@ -30,7 +31,6 @@ class LookbackMiner  # !TODO: Create and use a LBAPIQuery class with expected he
   @propertyDefaults =
     lastValidFrom: '0001-01-01T00:00:00.000Z'
     baseUri: 'https://rally1.rallydev.com/analytics/v2.0/service/rally'
-    hydrate: null
     unauthorizedProjects: []
     pagesize: 100000  # Start out with something really large and let it get set by the first response
     workspaceOID: -1
@@ -63,6 +63,65 @@ class LookbackMiner  # !TODO: Create and use a LBAPIQuery class with expected he
     @morePages = true
     @results = []
     @start = 0
+    @types = []
+    @typeDefinitions = {}
+    @hydrate = ['Project', 'Iteration', 'Release']
+
+  initialize: (@initializeCallback) ->
+    @fetchTypes((types)->
+      @setHydrate(types, () ->
+        @initializeCallback({@types, @hydrate})
+      )
+    )
+
+  fetchTypes: (@typeFetchCallback) ->
+    superagent
+      .get(@_getTypeFetchUri())
+      .auth(@user, @password)
+      .set('Accept', 'application/json')
+      .end(@typeFetchResponseProcessor)
+
+  typeFetchResponseProcessor: (response) =>
+    data = JSON.parse(response.text)
+    results = data.Results
+    uniqueTypes = {}
+    for r in results
+      type = r._TypeHierarchy[r._TypeHierarchy.length - 1]
+      unless type in @types
+        @types.push(type)
+    if data.TotalResultCount is 0
+      @typeFetchCallback(@types)
+    else
+      @fetchTypes(@typeFetchCallback)
+
+  _getTypeFetchUri: () ->
+    find = {"_ProjectHierarchy": @rootProjectOID}
+    if @unauthorizedProjects.length > 0
+      find.Project = {"$nin": @unauthorizedProjects}
+    if @types.length > 0
+      find._TypeHierarchy = {"$nin": @types}
+    uri = @baseUri
+    uri += '/workspace/'
+    uri += @workspaceOID
+    uri += '/artifact/snapshot/query.js'
+    uri += '?find=' + JSON.stringify(find)
+    uri += '&fields=["_TypeHierarchy"]'
+    uri += '&removeUnauthorizedSnapshots=true'
+
+    return uri
+
+  setHydrate: (types, @hydrateCallback) ->
+    @hydrate = ['Project', 'Iteration', 'Release']
+    avMiner = new AllowedValuesMiner(@user, @password)
+    avMiner.fetchAll(types, (typeDefinitions) =>
+      @typeDefinitions = typeDefinitions
+      for typeID, td of typeDefinitions
+        for attributeElementName, a of td.Attributes
+          if a.AllowedValues?
+            @hydrate.push(attributeElementName)
+            @hydrate.push('_PreviousValues.' + attributeElementName)
+      @hydrateCallback(@hydrate)
+    )
 
   _getUri: () ->
     find = {"_ProjectHierarchy": @rootProjectOID}
@@ -84,6 +143,36 @@ class LookbackMiner  # !TODO: Create and use a LBAPIQuery class with expected he
     uri += '&removeUnauthorizedSnapshots=true'
 
     return uri
+
+  _getPostUri: () ->
+    uri = @baseUri
+    uri += '/workspace/'
+    uri += @workspaceOID
+    uri += '/artifact/snapshot/query.js'
+
+    return uri
+
+  _getPostObject: () ->
+    find = {"_ProjectHierarchy": @rootProjectOID}
+    find._ValidFrom = {"$gte": @lastValidFrom}
+    if @unauthorizedProjects.length > 0
+      find.Project = {"$nin": @unauthorizedProjects}
+    fields = true
+    if @hydrate?
+      hydrate = @hydrate
+    sort = {_ValidFrom: 1}
+    pagesize =  @pagesize
+    start = @start
+    removeUnauthorizedSnapshots = true
+
+    post = {find, fields, hydrate, sort, pagesize, start, removeUnauthorizedSnapshots}
+
+    return post
+
+  _getPostString: () ->
+    postString = JSON.stringify(@_getPostObject(), null, 2)
+
+    return postString
 
   fetchPage: (@callback) ->
     ###
@@ -168,7 +257,8 @@ class LookbackMiner  # !TODO: Create and use a LBAPIQuery class with expected he
           @callback(response)
 
     superagent
-      .get(@_getUri())
+      .post(@_getPostUri())
+      .send(@_getPostObject())
       .auth(@user, @password)
       .set('Accept', 'application/json')
       .end(responseProcessor)
