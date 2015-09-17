@@ -18,11 +18,18 @@ config =
 user = "username"
 password = "password"
 
+try
+  auth = require('auth.json')
+  user = auth.user or user
+  password = auth.password or password
+  config.rootProjectOID = auth.rootProjectOID or config.rootProjectOID
+  config.workspaceOID = auth.workspaceOID or config.workspaceOID
+
 savedStateFilePath = path.join(__dirname, 'miner-config.json')
-if fs.existsSync(savedStateFilePath)
+try
   savedState = fs.readFileSync(savedStateFilePath, 'utf8')
   miner = LookbackMiner.newFromSavedState(user, password, savedState)
-else
+catch
   miner = new LookbackMiner(user, password, config)
   savedState = JSON.stringify(miner.getStateForSaving())
   fs.writeFileSync(savedStateFilePath, savedState, 'utf8')
