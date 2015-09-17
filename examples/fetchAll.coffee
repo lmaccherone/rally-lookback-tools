@@ -19,11 +19,12 @@ user = "username"
 password = "password"
 
 try
-  auth = require('auth.json')
+  auth = require(path.join(__dirname, 'auth.json'))
   user = auth.user or user
   password = auth.password or password
   config.rootProjectOID = auth.rootProjectOID or config.rootProjectOID
   config.workspaceOID = auth.workspaceOID or config.workspaceOID
+  console.log('got here')
 
 savedStateFilePath = path.join(__dirname, 'miner-config.json')
 try
